@@ -17,9 +17,6 @@ typedef struct dmp_dev {
 	dmp_stat write;
 } dmp_dev;
 
-// overall stat
-dmp_stat dmp_read, dmp_write;
-
 static int dmp_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 {
 	if (argc != 2) {
@@ -58,15 +55,11 @@ static int dmp_map(struct dm_target *ti, struct bio *bio)
 		sz = bio_sectors(bio) * SECTOR_SIZE;
 		dt->read.reqs++;
 		dt->read.blk_size_sum += sz;
-		dmp_read.reqs++;
-		dmp_read.blk_size_sum += sz;
 		break;
 	case REQ_OP_WRITE:
 		sz = bio_sectors(bio) * SECTOR_SIZE;
 		dt->write.reqs++;
 		dt->write.blk_size_sum += sz;
-		dmp_write.reqs++;
-		dmp_write.blk_size_sum += sz;
 		break;
 	default:
 		break;
