@@ -1,4 +1,5 @@
 #include <linux/device-mapper.h>
+#include <linux/kobject.h>
 
 #include <linux/module.h>
 #include <linux/init.h>
@@ -12,27 +13,65 @@ typedef struct dmp_stat {
 } dmp_stat;
 
 typedef struct dmp_dev {
+  struct kobject kobj;
 	struct dm_dev *dev;
 	dmp_stat read;
 	dmp_stat write;
 } dmp_dev;
 
+#define kobj_to_dmp_dev(kobj) container_of(kobj, struct dmp_dev, kobj)
+
+static ssize_t dm_attr_stat_show(struct kobject *kobj, struct attribute *attr, char *buf)
+{
+  dmp_dev* dd = kobj_to_dmp_dev(kobj);
+  return sprintf(buf, "read:\n\treqs: %ld\n\tavg size: %ld\nwrite:\n\treqs: %ld\n\tavg size: %ld\ntotal:\n\treqs: %ld\n\tavg size: %ld\n", 
+                 dd->read.reqs, 
+                 dd->read.blk_size_sum ? dd->read.blk_size_sum / dd->read.reqs : 0,
+                 dd->write.reqs,
+                 dd->write.blk_size_sum ? dd->write.blk_size_sum / dd->write.reqs : 0,
+                 dd->read.reqs + dd->write.reqs,
+                 dd->read.blk_size_sum + dd->write.blk_size_sum ? (dd->read.blk_size_sum + dd->write.blk_size_sum) / (dd->read.reqs + dd->write.reqs) : 0
+                 );
+}
+
+void dmp_dev_release(struct kobject *kobj)
+{
+  dmp_dev* dd = kobj_to_dmp_dev(kobj);
+  kfree(dd);
+}
+
+static struct attribute attr = {
+  .name = "stat",
+  .mode = 044,
+};
+
+static struct sysfs_ops dmp_dev_ops = {
+  .show = dm_attr_stat_show,
+};
+
+static struct kobj_type dmp_dev_ktype = {
+  .release = dmp_dev_release,
+  .sysfs_ops = &dmp_dev_ops,
+};
+
+// static struct kobj_attribute stat_attr = __ATTR(stat, 0444, dm_attr_stat_show, NULL);
+
 static int dmp_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 {
-	if (argc != 2) {
-		ti->error = "Invalid argument count";
-		return -EINVAL;
-	}
+  if (argc != 1) {
+    ti->error = "dmp: Invalid argument count";
+    return -EINVAL;
+  }
+
 	struct dmp_dev *dt = kmalloc(sizeof(dmp_dev), GFP_KERNEL);
 
-	if (dt) {
-		ti->error = "dm-basic_target: Cannot allocate linear context";
+	if (!dt) {
+		ti->error = "dmp: Cannot allocate linear context";
 		return -ENOMEM;
 	}
-
 	if (dm_get_device(ti, argv[0], dm_table_get_mode(ti->table),
 			  &dt->dev)) {
-		ti->error = "dm-basic_target: Device lookup failed";
+		ti->error = "dmp: Device lookup failed";
 		return -EINVAL;
 	}
 
@@ -40,9 +79,16 @@ static int dmp_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	dt->read.reqs = 0;
 	dt->write.blk_size_sum = 0;
 	dt->write.reqs = 0;
+  kobject_init_and_add(&dt->kobj, &dmp_dev_ktype, &(THIS_MODULE->mkobj.kobj), strrchr(argv[0], '/') + 1);
+  int error = sysfs_create_file(&dt->kobj, &attr);
+  if (error) {
+    dm_put_device(ti, dt->dev);
+    kobject_put(&dt->kobj);
+    return error;
+  }
 	ti->private = dt;
 
-	return 0;
+  return 0;
 }
 
 static int dmp_map(struct dm_target *ti, struct bio *bio)
@@ -75,7 +121,7 @@ static void dmp_dtr(struct dm_target *ti)
 {
 	struct dmp_dev *dt = (dmp_dev *)ti->private;
 	dm_put_device(ti, dt->dev);
-	kfree(dt);
+  kobject_put(&dt->kobj);
 }
 
 static struct target_type dmp_target = {
