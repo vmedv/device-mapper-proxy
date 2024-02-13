@@ -51,3 +51,13 @@ To see statistics, use
 $ cat /sys/module/dmp/$test1/stat
 ```
 
+> note: since we are interested in underlying device and creating more than one proxy for device is forbidden, sysfs folder named by underlying device.
+
+## Testing
+
+Run [init script](init.sh) with root privileges which create one device (`zero1`) with proxy device (`dmp0`) and one device (`zero2`) with one proxy device (`dmp2`) and proxy device to itself (`dmp3` -> `dmp2`).
+
+Now you can do different read/write operations and check results using 
+```console 
+$ cat /sys/module/dmp/$dev/stat
+```
