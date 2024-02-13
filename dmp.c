@@ -20,17 +20,30 @@ typedef struct dmp_dev {
 } dmp_dev;
 
 #define kobj_to_dmp_dev(kobj) container_of(kobj, struct dmp_dev, kobj)
+#define calc_avg(reqs, sum) ((reqs) ? (sum) / (reqs) : (sum))
+#define calc_avg_dmp_stat(stat) (calc_avg(stat.reqs, stat.blk_size_sum))
 
-static ssize_t dm_attr_stat_show(struct kobject *kobj, struct attribute *attr, char *buf)
+static ssize_t dm_attr_stat_show(struct kobject *kobj, 
+                                 struct attribute *attr, 
+                                 char *buf)
 {
   dmp_dev* dd = kobj_to_dmp_dev(kobj);
-  return sprintf(buf, "read:\n\treqs: %ld\n\tavg size: %ld\nwrite:\n\treqs: %ld\n\tavg size: %ld\ntotal:\n\treqs: %ld\n\tavg size: %ld\n", 
+  return sprintf(buf, "read:\n"
+                      "\treqs: %ld\n"
+                      "\tavg size: %ld\n"
+                      "write:\n"
+                      "\treqs: %ld\n"
+                      "\tavg size: %ld\n"
+                      "total:\n"
+                      "\treqs: %ld\n"
+                      "\tavg size: %ld\n", 
                  dd->read.reqs, 
-                 dd->read.blk_size_sum ? dd->read.blk_size_sum / dd->read.reqs : 0,
+                 calc_avg_dmp_stat(dd->read),
                  dd->write.reqs,
-                 dd->write.blk_size_sum ? dd->write.blk_size_sum / dd->write.reqs : 0,
+                 calc_avg_dmp_stat(dd->write),
                  dd->read.reqs + dd->write.reqs,
-                 dd->read.blk_size_sum + dd->write.blk_size_sum ? (dd->read.blk_size_sum + dd->write.blk_size_sum) / (dd->read.reqs + dd->write.reqs) : 0
+                 calc_avg(dd->read.reqs + dd->write.reqs, 
+                          dd->read.blk_size_sum + dd->write.blk_size_sum)
                  );
 }
 
@@ -53,8 +66,6 @@ static struct kobj_type dmp_dev_ktype = {
   .release = dmp_dev_release,
   .sysfs_ops = &dmp_dev_ops,
 };
-
-// static struct kobj_attribute stat_attr = __ATTR(stat, 0444, dm_attr_stat_show, NULL);
 
 static int dmp_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 {
@@ -79,12 +90,21 @@ static int dmp_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	dt->read.reqs = 0;
 	dt->write.blk_size_sum = 0;
 	dt->write.reqs = 0;
-  kobject_init_and_add(&dt->kobj, &dmp_dev_ktype, &(THIS_MODULE->mkobj.kobj), strrchr(argv[0], '/') + 1);
-  int error = sysfs_create_file(&dt->kobj, &attr);
-  if (error) {
+  int init_err = kobject_init_and_add(&dt->kobj, 
+                                      &dmp_dev_ktype, 
+                                      &(THIS_MODULE->mkobj.kobj), 
+                                      strrchr(argv[0], '/') + 1);
+  if (init_err) {
     dm_put_device(ti, dt->dev);
     kobject_put(&dt->kobj);
-    return error;
+    return init_err;
+  }
+
+  int create_err = sysfs_create_file(&dt->kobj, &attr);
+  if (create_err) {
+    dm_put_device(ti, dt->dev);
+    kobject_put(&dt->kobj);
+    return create_err;
   }
 	ti->private = dt;
 
@@ -94,8 +114,8 @@ static int dmp_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 static int dmp_map(struct dm_target *ti, struct bio *bio)
 {
 	struct dmp_dev *dt = (dmp_dev *)ti->private;
-	bio->bi_bdev = dt->dev->bdev;
 	size_t sz;
+  bio_set_dev(bio, dt->dev->bdev);
 	switch (bio_op(bio)) {
 	case REQ_OP_READ:
 		sz = bio_sectors(bio) * SECTOR_SIZE;
@@ -110,8 +130,7 @@ static int dmp_map(struct dm_target *ti, struct bio *bio)
 	default:
 		break;
 	}
-
-	bio_endio(bio);
+  submit_bio(bio);
 
 	/* accepted bio, don't make new request */
 	return DM_MAPIO_SUBMITTED;
@@ -134,5 +153,6 @@ static struct target_type dmp_target = {
 };
 module_dm(dmp);
 
+MODULE_AUTHOR("ivan medvedev");
 MODULE_DESCRIPTION(DM_NAME " log simple stats");
 MODULE_LICENSE("GPL");
