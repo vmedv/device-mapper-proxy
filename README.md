@@ -55,9 +55,16 @@ $ cat /sys/module/dmp/$test1/stat
 
 ## Testing
 
-Run [init script](init.sh) with root privileges which create one device (`zero1`) with proxy device (`dmp0`) and one device (`zero2`) with one proxy device (`dmp2`) and proxy device to itself (`dmp3` -> `dmp2`).
+Run [init script](init.sh) with root privileges which create one device (`zero1`) with proxy device (`dmp0`) and one device (`zero2`) with one proxy device (`dmp2`) and one proxy device to itself (`dmp3` -> `dmp2`).
 
 Now you can do different read/write operations and check results using 
 ```console 
 $ cat /sys/module/dmp/$dev/stat
 ```
+
+To remove test devices and remove module run [end script](end.sh).
+
+Also [test script](test.sh) provided. It covers some simple test cases.
+
+---
+Tested on Artix Linux (with OpenRC) with kernel release `6.7.4-artix1-1`.
