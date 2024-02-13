@@ -8,13 +8,13 @@ Results are available through `sysfs`.
 
 To build module just use `make`:
 
-```sh
+```console
 $ make
 ```
 
 To clean artifacts:
 
-```sh
+```console
 $ make clean
 ```
 
@@ -22,32 +22,32 @@ $ make clean
 
 Insert a module into a kernel:
 
-```sh
+```console
 # insmod dmp.ko
 ```
 
 Create test block device:
 
-```sh
+```console
 # dmsetup create $test1 --table "0 512 zero"
 ```
 
 Create proxy device (provided by this module):
 
-```sh
+```console
 # dmsetup create dmp1 --table "0 512 dmp /dev/mapper/$test1"
 ```
 
 Some read/write operations: 
 
-```sh
+```console
 # dd if=/dev/random of=/dev/mapper/dmp1 bs=4k count=1
 # dd of=/dev/null if=/dev/mapper/dmp1 bs=4k count=1
 ```
 
 To see statistics, use 
 
-```sh
+```console
 $ cat /sys/module/dmp/$test1/stat
 ```
 
